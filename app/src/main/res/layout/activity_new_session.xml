@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 1. Фон с космосом и звездами (фото) -->
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:src="@drawable/space_bg_stars"
+        />
+
+    <!-- 2. Полупрозрачная карточка с закругленными углами -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="20dp"
+        android:layout_gravity="center"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="0dp"
+        app:cardBackgroundColor="#80FFFFFF"> <!-- Полупрозрачный белый -->
+
+        <!-- Контейнер для всех элементов -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="24dp">
+
+            <!-- Заголовок -->
+            <TextView
+                android:id="@+id/titleTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Новая сессия"
+                android:textColor="#000000"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginBottom="24dp"/>
+
+            <!-- Блок для фото зенита -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/zenithPhotoCard"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:layout_below="@id/titleTextView"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <ImageView
+                        android:id="@+id/zenithImageView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_add_photo_placeholder"
+                        android:contentDescription="Фото зенита"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Добавить фото зенита"
+                        android:textColor="#000000"
+                        android:textSize="16sp"
+                        android:layout_centerInParent="true"/>
+
+                    <ImageButton
+                        android:id="@+id/addZenithPhotoButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_camera"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:layout_alignParentEnd="true"
+                        android:layout_margin="8dp"/>
+                </RelativeLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Блок для фото полярной звезды -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/polarStarPhotoCard"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:layout_below="@id/zenithPhotoCard"
+                android:layout_marginBottom="24dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <ImageView
+                        android:id="@+id/polarStarImageView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_add_photo_placeholder"
+                        android:contentDescription="Фото полярной звезды"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Добавить фото Полярной звезды"
+                        android:textColor="#000000"
+                        android:textSize="16sp"
+                        android:layout_centerInParent="true"/>
+
+                    <ImageButton
+                        android:id="@+id/addPolarStarButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_camera"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:layout_alignParentEnd="true"
+                        android:layout_margin="8dp"/>
+                </RelativeLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Кнопка "Решить" -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/solveButton"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_below="@id/polarStarPhotoCard"
+                android:text="Отправить на astrometry.net"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                app:icon="@drawable/ic_rocket"
+                app:iconTint="#FFFFFF"
+                app:cornerRadius="28dp"
+                android:backgroundTint="#6200EE"
+                app:rippleColor="#7C4DFF"
+                android:elevation="8dp"/>
+        </RelativeLayout>
+
+    </androidx.cardview.widget.CardView>
+    <!-- Нижняя панель навигации -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavigation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#80000000"
+        app:itemIconTint="@drawable/nav_color_selector"
+        app:itemTextColor="@drawable/nav_color_selector"
+        app:menu="@menu/bottom_nav_menu"/>
+
+</RelativeLayout>
+
