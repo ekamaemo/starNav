@@ -48,7 +48,7 @@ public class RegistrationActivity extends AppCompatActivity {
                 return;
             }
 
-            if (databaseHelper.insertData(email, username, password)) {
+            if (databaseHelper.insertDataUsers(email, username, password)) {
                 Toast.makeText(this, "Регистрация прошла успешно!", Toast.LENGTH_SHORT).show();
 
                 getSharedPreferences("app_prefs", MODE_PRIVATE)

@@ -29,5 +29,5 @@
         • Полярная звезда есть на северном снимке\n
         • Низ фотографии соответствует краю горизонта\n
     </string>
-
+    <string name="hyperlink">Получить ключ на <a href="https://nova.astrometry.net/">astrometry.net</a></string>
 </resources>

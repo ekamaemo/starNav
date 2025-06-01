@@ -3,6 +3,7 @@ package com.example.starnav;
 import android.Manifest;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -22,6 +23,9 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
+
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -31,16 +35,29 @@ public class AstrometrySessionActivity extends AppCompatActivity {
     private static final int REQUEST_IMAGE_CAPTURE = 1;
     private static final int REQUEST_IMAGE_GALLERY = 2;
 
+    private BottomNavigationView bottomNav;
+
     private ImageView viewImagePolarius;
     private ImageView viewImageZenith;
     private String currentPhotoPath;
     private String currentPhotoType; // "zenith" или "polarius"
     private Uri zenithImageUri, polarisImageUri;
+    public static String API_KEY;
+    public static String email;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_new_session);
+        bottomNav = findViewById(R.id.bottomNavigation);
+
+        bottomNav.setSelectedItemId(R.id.nav_camera);
+
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        API_KEY = prefs.getString("api_key", "no");
+        email = prefs.getString("email", "noname@noname.com");
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
                     checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
@@ -69,9 +86,26 @@ public class AstrometrySessionActivity extends AppCompatActivity {
                 try {
                     solveImages();
                 } catch (IOException e) {
+                    Log.println(Log.ASSERT, "false", "чтото не так");
                     throw new RuntimeException(e);
                 }
             }
+        });
+
+        // Навигация
+        bottomNav.setOnItemSelectedListener(item -> {
+            switch (item.getItemId()) {
+                case R.id.nav_home:
+                    startActivity(new Intent(this, MainActivity.class));
+                    return true;
+                case R.id.nav_history:
+                    startActivity(new Intent(this, HistoryOfSessionsActivity.class));
+                    return true;
+                case R.id.nav_profile:
+                    startActivity(new Intent(this, ProfileActivity.class));
+                    return true;
+            }
+            return false;
         });
     }
 
@@ -136,11 +170,14 @@ public class AstrometrySessionActivity extends AppCompatActivity {
 
         // 2. Создаем клиента с путями к изображениям
         AstrometryNetClient myClient = new AstrometryNetClient(
+                AstrometrySessionActivity.this,
+                email,
+                API_KEY,
                 FileUtils.getFilePathFromUri(this, zenithImageUri),
                 FileUtils.getFilePathFromUri(this, polarisImageUri)
         );
-
-        // 3. Показываем прогресс
+        Log.println(Log.ASSERT, "client", "Отправлено");
+        myClient.processImages();
     }
 
     @Override
@@ -151,12 +188,17 @@ public class AstrometrySessionActivity extends AppCompatActivity {
             if (requestCode == REQUEST_IMAGE_CAPTURE) {
                 // Обработка фото с камеры
                 Bitmap bitmap = BitmapFactory.decodeFile(currentPhotoPath);
-                if (bitmap != null) {
-                    if ("zenith".equals(currentPhotoType)) {
-                        viewImageZenith.setImageBitmap(bitmap);
-                    } else {
-                        viewImagePolarius.setImageBitmap(bitmap);
-                    }
+                File file = new File(currentPhotoPath);
+                Uri photoUri = FileProvider.getUriForFile(this,
+                        getApplicationContext().getPackageName() + ".fileprovider",
+                        file);
+
+                if ("zenith".equals(currentPhotoType)) {
+                    viewImageZenith.setImageBitmap(bitmap);
+                    zenithImageUri = photoUri; // Используем созданный URI
+                } else {
+                    viewImagePolarius.setImageBitmap(bitmap);
+                    polarisImageUri = photoUri; // Используем созданный URI
                 }
             } else if (requestCode == REQUEST_IMAGE_GALLERY) {
                 // Обработка выбора из галереи
@@ -172,7 +214,9 @@ public class AstrometrySessionActivity extends AppCompatActivity {
 
                         if ("zenith".equals(currentPhotoType)) {
                             viewImageZenith.setImageBitmap(bitmap);
+                            zenithImageUri = data.getData();
                         } else {
+                            polarisImageUri = data.getData();
                             viewImagePolarius.setImageBitmap(bitmap);
                         }
                     }

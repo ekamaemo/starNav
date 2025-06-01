@@ -1,76 +1,98 @@
 package com.example.starnav;
 
+import android.content.Context;
+import android.content.SharedPreferences;
+
 import okhttp3.*;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.text.SimpleDateFormat;
 import java.util.Base64;
+import java.time.LocalDate;
+import java.util.Calendar;
+import android.app.Application;
+import android.util.Log;
+
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.CloseableHttpResponse;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.HttpGet;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.CloseableHttpClient;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.HttpClients;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.util.EntityUtils;
+
+import java.util.Date;
 
 public class AstrometryNetClient {
-    private static final String API_KEY = "mwlmuhpsdvujnjrx";
-    private static final String UPLOAD_URL = "http://nova.astrometry.net/api/upload";
-    private static final String LOGIN_URL = "http://nova.astrometry.net/api/login";
-    private static String[] imagePaths;
+    private final String API_KEY;
+    private static final String UPLOAD_URL = "https://nova.astrometry.net/api/upload";
+    private static final String LOGIN_URL = "https://nova.astrometry.net/api/login";
+    private final String[] imagePaths;
+    private final String email;
+    private final Context context;
 
-
-    public AstrometryNetClient(String pathZenith, String pathPolarius){
-        imagePaths = new String[]{pathZenith, pathPolarius};
+    public AstrometryNetClient(Context context, String email, String apiKey, String pathZenith, String pathPolarius) {
+        this.context = context;
+        this.imagePaths = new String[]{pathZenith, pathPolarius};
+        this.API_KEY = apiKey;
+        this.email = email;
     }
 
+    public void processImages() {
+        new Thread(() -> {
+            try {
+                String sessionKey = getSessionKey();
+                if (sessionKey == null) {
+                    Log.e("AstrometryNet", "Failed to get session key");
+                    return;
+                }
 
-    public void main() {
-        try {
-            String sessionKey = getSessionKey();
-            if (sessionKey == null) {
-                System.out.println("Не удалось получить сессионный ключ");
-                return;
+                DataBaseHelper databaseHelper = new DataBaseHelper(context);
+
+                for (String path : imagePaths) {
+                    try {
+                        String subId = uploadImage(path, sessionKey);
+                        if (subId != null) {
+                            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+                            databaseHelper.insertDataSessions(email, subId, timeStamp);
+                            Log.i("AstrometryNet", "Image uploaded, subId: " + subId);
+                        }
+                    } catch (Exception e) {
+                        Log.e("AstrometryNet", "Error uploading image", e);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("AstrometryNet", "Error processing images", e);
             }
-            for (String path : imagePaths) {
-                System.out.println("\nОтправка изображения: " + path);
-                String response = uploadImage(path, sessionKey);
-                processResponse(response);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        }).start();
     }
 
-    private static String getSessionKey() throws IOException, JSONException {
+    private String getSessionKey() throws IOException, JSONException {
         OkHttpClient client = new OkHttpClient();
         JSONObject json = new JSONObject();
         json.put("apikey", API_KEY);
 
-        RequestBody body = RequestBody.create(
-                json.toString(),
-                MediaType.parse("application/json")
-        );
-
         Request request = new Request.Builder()
                 .url(LOGIN_URL)
-                .post(body)
+                .post(RequestBody.create(json.toString(), MediaType.parse("application/json")))
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
             String responseString = response.body().string();
-            JSONObject jsonResponse = new JSONObject(responseString);
-            return jsonResponse.optString("session", null);
+            return new JSONObject(responseString).optString("session", null);
         }
     }
 
-    private static String uploadImage(String imagePath, String sessionKey) throws IOException, JSONException {
+    private String uploadImage(String imagePath, String sessionKey) throws IOException, JSONException {
         OkHttpClient client = new OkHttpClient();
         File imageFile = new File(imagePath);
 
         JSONObject requestJson = new JSONObject();
         requestJson.put("session", sessionKey);
-        requestJson.put("publicly_visible", "n");
-        requestJson.put("allow_modifications", "n");
-        requestJson.put("scale_units", "degwidth");
-        requestJson.put("scale_type", "ul");
-        requestJson.put("scale_upper", 180.0);
 
         RequestBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -85,23 +107,45 @@ public class AstrometryNetClient {
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
-            return response.body().string();
+            String responseBody = response.body().string();
+            JSONObject json = new JSONObject(responseBody);
+            return json.getJSONObject("submission").getString("subid");
         }
     }
 
-    private static void processResponse(String response) {
-        try {
-            JSONObject jsonResponse = new JSONObject(response);
-            System.out.println("Получен ответ от сервера:\n" + jsonResponse.toString(2));
+    public boolean isJobCompleted(String jobId) throws IOException {
+        String url = "https://nova.astrometry.net/api/jobs/" + jobId;
 
-            if (jsonResponse.optString("status", "").equals("success")) {
-                System.out.println("Номер сессии (subid): " + jsonResponse.optInt("subid"));
-                System.out.println("ID задания: " + jsonResponse.optInt("jobid"));
-            } else {
-                System.out.println("Ошибка: " + jsonResponse.optString("errormessage", "Неизвестная ошибка"));
-            }
-        } catch (Exception e) {
-            System.out.println("Ошибка при обработке ответа: " + e.getMessage());
+        HttpGet request = new HttpGet(url);
+        try (CloseableHttpClient httpClient = HttpClients.createDefault();
+             CloseableHttpResponse response = httpClient.execute(request)) {
+            String json = EntityUtils.toString(response.getEntity());
+            JSONObject jobInfo = new JSONObject(json);
+            return "success".equals(jobInfo.getString("status"));
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
         }
+    }
+
+    public File downloadFitsFile(Context context, String jobId) throws IOException {
+        // URL для скачивания WCS FITS-файла
+        String url = "https://nova.astrometry.net/image_rd_file/" + jobId;
+
+        // Создаем временный файл
+        File outputFile = new File(context.getExternalFilesDir(null), "wcs_" + jobId + ".fits");
+
+        try (CloseableHttpClient httpClient = HttpClients.createDefault();
+             CloseableHttpResponse response = httpClient.execute(new HttpGet(url));
+             InputStream is = response.getEntity().getContent();
+             FileOutputStream fos = new FileOutputStream(outputFile)) {
+
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+            }
+        }
+
+        return outputFile;
     }
 }

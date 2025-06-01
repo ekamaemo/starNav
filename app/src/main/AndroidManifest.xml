@@ -49,6 +49,9 @@
         <activity
             android:name=".AstrometrySessionActivity"
             android:theme="@style/Theme.StarNav"/>
+        <activity
+            android:name=".HistoryOfSessionsActivity"
+            android:theme="@style/Theme.StarNav"/>
     </application>
 
 </manifest>

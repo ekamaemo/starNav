@@ -64,14 +64,17 @@ public class MainActivity extends AppCompatActivity {
         // Навигация
         bottomNav.setOnItemSelectedListener(item -> {
             switch (item.getItemId()) {
-                case R.id.nav_home:
-                    // Действие для кнопки "Дом"
-                    return true;
                 case R.id.nav_camera:
-                    startActivity(new Intent(this, AstrometrySessionActivity.class));
+                    String api_key = prefs.getString("api_key", "no");
+                    if (api_key.equals("no")){
+                        Toast.makeText(this, "Впишите API ключ в вашем профиле", Toast.LENGTH_LONG);
+                    }
+                    else {
+                        startActivity(new Intent(this, AstrometrySessionActivity.class));
+                    }
                     return true;
                 case R.id.nav_history:
-                    //startActivity(new Intent(this, HistoryActivity.class));
+                    startActivity(new Intent(this, HistoryOfSessionsActivity.class));
                     return true;
                 case R.id.nav_profile:
                     startActivity(new Intent(this, ProfileActivity.class));
