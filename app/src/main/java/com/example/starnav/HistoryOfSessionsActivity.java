@@ -23,6 +23,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
@@ -41,6 +42,8 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
     private BottomNavigationView bottomNav;
     private SessionsAdapter adapter;
     private DataBaseHelper dbHelper;
+    private String API_KEY;
+    private AstrometryNetClient myClient;
 
     @Override
     public void onCreate(Bundle savedInstanceState){
@@ -48,6 +51,8 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
         setContentView(R.layout.activity_history_of_sessions);
 
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        API_KEY = prefs.getString("api_key", "no");
+        String email = prefs.getString("email", "noname@noname");
 
         RecyclerView recyclerView = findViewById(R.id.sessionsRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
@@ -55,13 +60,30 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
         bottomNav.setSelectedItemId(R.id.nav_history);
         dbHelper = new DataBaseHelper(this);
 
-//        List<SessionItem> items = Arrays.asList(
-//                new SessionItem("http://example.com/photo1.jpg", "12.05.2023", true),
-//                new SessionItem("http://example.com/photo2.jpg", "13.05.2023", false)
-//        );
-        List<SessionItem> items = getSessions(prefs.getString("email", "noname@noname.com"));
+        myClient = new AstrometryNetClient(this, email, API_KEY, "", "");
 
-        recyclerView.setAdapter(new SessionsAdapter(items));
+        List<SessionItem> items = Arrays.asList(
+                new SessionItem("http://example.com/photo1.jpg", "12.05.2023", true),
+                new SessionItem("http://example.com/photo2.jpg", "13.05.2023", false)
+        );
+//        List<SessionItem> items = null;
+//        try {
+//            items = getSessions(prefs.getString("email", "noname@noname.com"));
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+
+        recyclerView.setAdapter(
+                new SessionsAdapter(
+                        items,  // Передаем список items
+                        item -> {  // Лямбда-выражение для OnItemClickListener
+                            // Обработка клика
+                            Intent intent = new Intent(this, ItemActivity.class);
+                            startActivity(intent);
+                        }
+                )
+        );
+
 
         bottomNav.setOnItemSelectedListener(item -> {
             switch (item.getItemId()) {
@@ -85,22 +107,68 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
         });
     }
 
-    private List<SessionItem> getSessions(String email){
-        List<SessionItem> items = Collections.emptyList();
+    private List<SessionItem> getSessions(String email) throws IOException {
+        List<SessionItem> items = new ArrayList<>();
         String currDate = new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime());
         Cursor sessionsCursor = dbHelper.getUserSessions(email);
+
         if (sessionsCursor != null && sessionsCursor.moveToFirst()) {
             do {
                 @SuppressLint("Range") String subid = sessionsCursor.getString(sessionsCursor.getColumnIndex("subid"));
                 @SuppressLint("Range") String date = sessionsCursor.getString(sessionsCursor.getColumnIndex("date_of_dispatch"));
 
-                // Используйте полученные данные
+                String[] subids = subid.split(" ");
+                String subidZenith = subids[0];
+                String subidPolarius = subids[1];
+//
+//                // 1. Обработка зенита
+//                List<String> zenithJobIds = myClient.getJobsIds(subidZenith);
+//                if (!zenithJobIds.isEmpty()) {
+//                    String zenithJobId = zenithJobIds.get(0);
+//
+//                    // Проверяем существование job в БД
+//                    if (!dbHelper.jobExists(zenithJobId, subidZenith)) {
+//                        // Вставляем новую запись
+//                        dbHelper.insertDataJobs(
+//                                subidZenith,
+//                                zenithJobId,
+//                                "zenith",
+//                                "submitted", // начальный статус
+//                                "" // пустые данные
+//                        );
+//                    }
+//
+//                    // Обновляем информацию
+//                    myClient.getInfo(zenithJobId, subidZenith);
+//                }
+//
+//                // 2. Обработка полярной звезды
+//                List<String> polarJobIds = myClient.getJobsIds(subidPolarius);
+//                double yPol = 0;
+//                if (!polarJobIds.isEmpty()) {
+//                    String polarJobId = polarJobIds.get(0);
+//
+//                    if (!dbHelper.jobExists(polarJobId, subidPolarius)) {
+//                        dbHelper.insertDataJobs(
+//                                subidPolarius,
+//                                polarJobId,
+//                                "polar",
+//                                "submitted",
+//                                ""
+//                        );
+//                    }
+//                    yPol = myClient.downloadAndReadFitsFile(this, subidPolarius);
+//
+//                    myClient.getInfo(polarJobId, subidPolarius);
+//                }
+//                dbHelper.updateSessions(email, subid, yPol);
+                // Добавляем элемент в список
                 items.add(new SessionItem("", date, isProcessed(currDate, date)));
-                Log.d("SessionInfo", "SubID: " + subid + ", Date: " + date);
+                Log.d("SessionInfo", "SubID: " + subid + ", DateUTC: " + date);
 
             } while (sessionsCursor.moveToNext());
 
-            sessionsCursor.close(); // Не забудьте закрыть курсор!
+            sessionsCursor.close();
         }
         return items;
     }

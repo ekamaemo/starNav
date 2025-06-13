@@ -1,22 +1,20 @@
 package com.example.starnav;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import okhttp3.*;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.text.SimpleDateFormat;
-import java.util.Base64;
-import java.time.LocalDate;
-import java.util.Calendar;
-import android.app.Application;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+
 import android.util.Log;
 
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.CloseableHttpResponse;
@@ -25,7 +23,7 @@ import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.cli
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.HttpClients;
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.util.EntityUtils;
 
-import java.util.Date;
+import java.util.List;
 
 public class AstrometryNetClient {
     private final String API_KEY;
@@ -52,21 +50,25 @@ public class AstrometryNetClient {
                 }
 
                 DataBaseHelper databaseHelper = new DataBaseHelper(context);
-
+                ZonedDateTime utcTime = ZonedDateTime.now(java.time.ZoneOffset.UTC);
+                // Используйте ISO-8601 формат (рекомендуется)
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                String timeString = utcTime.format(formatter);
+                String subIds = "";
                 for (String path : imagePaths) {
                     try {
                         String subId = uploadImage(path, sessionKey);
                         if (subId != null) {
-                            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-                            databaseHelper.insertDataSessions(email, subId, timeStamp);
-                            Log.i("AstrometryNet", "Image uploaded, subId: " + subId);
+                            subIds += " " + subId;
+                            Log.i("DataBase", "Image uploaded, subId: " + subId);
                         }
                     } catch (Exception e) {
-                        Log.e("AstrometryNet", "Error uploading image", e);
+                        Log.e("Database", "Error uploading image", e);
                     }
                 }
+                databaseHelper.insertDataSessions(email, sessionKey, subIds, timeString, imagePaths[1], imagePaths[0]);
             } catch (Exception e) {
-                Log.e("AstrometryNet", "Error processing images", e);
+                Log.e("Database", "Error processing images", e);
             }
         }).start();
     }
@@ -127,12 +129,12 @@ public class AstrometryNetClient {
         }
     }
 
-    public File downloadFitsFile(Context context, String jobId) throws IOException {
+    public double downloadAndReadFitsFile(Context context, String jobId) throws IOException {
         // URL для скачивания WCS FITS-файла
         String url = "https://nova.astrometry.net/image_rd_file/" + jobId;
 
         // Создаем временный файл
-        File outputFile = new File(context.getExternalFilesDir(null), "wcs_" + jobId + ".fits");
+        File outputFile = new File(context.getExternalFilesDir(null), "image_rd_" + jobId + ".fits");
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault();
              CloseableHttpResponse response = httpClient.execute(new HttpGet(url));
@@ -145,7 +147,104 @@ public class AstrometryNetClient {
                 fos.write(buffer, 0, bytesRead);
             }
         }
+        FitsApiClient client = new FitsApiClient("https://ekamaemo.pythonanywhere.com/");
+        client.findPolaris(outputFile, new FitsApiClient.PolarisCallback() {
+            @Override
+            public double onSuccess(double polarisY) {
+                // Обработка успешного результата
+                return polarisY;
+            }
 
-        return outputFile;
+            @Override
+            public int onError(String message) {
+                // Обработка ошибки
+                return -1;
+            }
+        });
+        return -1;
+    }
+
+    public List<String> getJobsIds(String SUBID) throws IOException {
+        String url = "https://nova.astrometry.net/api/submissions/" + SUBID;
+        OkHttpClient client = new OkHttpClient();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .get()  // Используем GET вместо POST, так как мы получаем данные
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Unexpected code " + response);
+            }
+
+            String responseData = response.body().string();
+            JSONObject json = new JSONObject(responseData);
+
+            // Извлекаем массив jobs из JSON
+            JSONArray jobsArray = json.getJSONArray("jobs");
+
+            // Создаем список для хранения ID работ
+            List<String> jobIds = new ArrayList<>();
+
+            // Проходим по всем элементам массива и извлекаем ID
+            for (int i = 0; i < jobsArray.length(); i++) {
+                jobIds.add(String.valueOf(jobsArray.getInt(i)));
+            }
+
+            return jobIds;
+        } catch (Exception e) {
+            throw new IOException("Failed to parse jobs IDs", e);
+        }
+    }
+
+    public void getInfo(String jobID, String sessionId) {
+        String url = "https://nova.astrometry.net/api/jobs/" + jobID + "/info/";
+        OkHttpClient client = new OkHttpClient();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .addHeader("session", sessionId) // Важно: добавляем session key в заголовки!
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Unexpected code " + response);
+            }
+
+            String responseData = response.body().string();
+            JSONObject json = new JSONObject(responseData);
+
+            // 1. Получаем статус
+            String status = json.getString("status");
+
+            // 2. Извлекаем нужные данные для info (пример для WCS-параметров)
+            JSONObject infoJson = new JSONObject();
+
+            if (json.has("calibration")) {
+                JSONObject calibration = json.getJSONObject("calibration");
+                infoJson.put("ra", calibration.optDouble("ra"));
+                infoJson.put("dec", calibration.optDouble("dec"));
+                infoJson.put("pixscale", calibration.optDouble("pixscale"));
+            }
+
+            if (json.has("tags")) {
+                infoJson.put("tags", json.getJSONArray("tags"));
+            }
+
+            // 3. Конвертируем JSON в строку для сохранения в БД
+            String info = infoJson.toString();
+
+            // 4. Обновляем базу данных
+            DataBaseHelper databaseHelper = new DataBaseHelper(context);
+            databaseHelper.updateJobs(jobID, sessionId, status, info);
+
+        } catch (Exception e) {
+            Log.e("Astrometry", "Error fetching job info", e);
+            // Обновляем статус на "failed" в случае ошибки
+            DataBaseHelper databaseHelper = new DataBaseHelper(context);
+            databaseHelper.updateJobs(jobID, sessionId, "failed", "{\"error\": \"" + e.getMessage() + "\"}");
+        }
     }
 }

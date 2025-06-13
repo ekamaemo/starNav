@@ -26,11 +26,16 @@ public class MainActivity extends AppCompatActivity {
     private ImageButton btnLogout;
     private BottomNavigationView bottomNav;
     private boolean isVideoPlaying = false;
+    private static int k = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        if (k == 0) {
+            prefs.edit().clear().apply();
+        }
+        k += 1;
         boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
 
         if (!isLoggedIn) {

@@ -17,7 +17,9 @@ import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 
 public class ObserverPosition {
-    public float getLatitude(float y, int Y, float FOV){
+    public static double getLatitude(double y){
+        int Y = 992;
+        float FOV = 60.0F;
         // y - координата Полярной звезды,Y - высота изображения, FOV- угловой обзор камеры по вертикали
         return (Y - y) / Y * FOV;
     }

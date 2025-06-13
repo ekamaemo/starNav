@@ -176,7 +176,7 @@ public class AstrometrySessionActivity extends AppCompatActivity {
                 FileUtils.getFilePathFromUri(this, zenithImageUri),
                 FileUtils.getFilePathFromUri(this, polarisImageUri)
         );
-        Log.println(Log.ASSERT, "client", "Отправлено");
+        Log.println(Log.ASSERT, "client", "Добавлено в бд");
         myClient.processImages();
     }
 

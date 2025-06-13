@@ -16,9 +16,16 @@ import java.util.List;
 public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHolder> {
 
     private List<SessionItem> items;
+    private final OnItemClickListener listener;
 
-    public SessionsAdapter(List<SessionItem> items) {
+    // Интерфейс для обработки кликов
+    public interface OnItemClickListener {
+        void onItemClick(SessionItem item);
+    }
+
+    public SessionsAdapter(List<SessionItem> items, OnItemClickListener listener) {
         this.items = items;
+        this.listener = listener;
     }
 
     @NonNull
@@ -29,12 +36,18 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
         return new ViewHolder(view);
     }
 
+
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         SessionItem item = items.get(position);
-        holder.date.setText(item.date);
-        holder.status.setText(item.isProcessed ? "✓ Готово" : "В работе");
-        Glide.with(holder.itemView).load(item.imageUrl).into(holder.image);
+        holder.bind(item);
+
+        // Убедитесь, что этот код есть и listener не null!
+        holder.itemView.setOnClickListener(v -> {
+            if (listener != null) {
+                listener.onItemClick(item); // Должен вызываться здесь
+            }
+        });
     }
 
     @Override
@@ -51,6 +64,9 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
             image = itemView.findViewById(R.id.sessionImageView);
             date = itemView.findViewById(R.id.dateTextView);
             status = itemView.findViewById(R.id.statusTextView);
+        }
+
+        public void bind(SessionItem item) {
         }
     }
 }
