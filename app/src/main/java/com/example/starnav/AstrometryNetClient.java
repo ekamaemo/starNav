@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -41,6 +42,14 @@ public class AstrometryNetClient {
     }
 
     public void processImages() {
+        // Проверка файлов перед отправкой
+        for (String path : imagePaths) {
+            File file = new File(path);
+            if (!file.exists() || !file.canRead()) {
+                Log.e("Astrometry", "Cannot read file: " + path);
+                return;
+            }
+        }
         new Thread(() -> {
             try {
                 String sessionKey = getSessionKey();
@@ -75,17 +84,60 @@ public class AstrometryNetClient {
 
     private String getSessionKey() throws IOException, JSONException {
         OkHttpClient client = new OkHttpClient();
+
+        // 1. Проверка API ключа
+        if (API_KEY == null || API_KEY.isEmpty()) {
+            throw new IllegalArgumentException("API key is not set");
+        }
+
+        // 2. Создаем JSON запрос
         JSONObject json = new JSONObject();
         json.put("apikey", API_KEY);
 
+        // 3. Настраиваем HTTP-запрос
+        RequestBody body = RequestBody.create(
+                json.toString(),
+                MediaType.parse("application/json; charset=utf-8")
+        );
+
         Request request = new Request.Builder()
                 .url(LOGIN_URL)
-                .post(RequestBody.create(json.toString(), MediaType.parse("application/json")))
+                .post(body)
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "application/json")
                 .build();
 
+        // 4. Выполняем запрос
         try (Response response = client.newCall(request).execute()) {
-            String responseString = response.body().string();
-            return new JSONObject(responseString).optString("session", null);
+            // Проверяем статус ответа
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "no body";
+                throw new IOException("HTTP error " + response.code() + ": " + errorBody);
+            }
+            Log.println(Log.ASSERT, "ooooo", String.valueOf(response));
+            byte[] bytes = response.body().bytes();
+            String rawResponse = new String(bytes, StandardCharsets.UTF_8);
+            Log.d("RAW_RESPONSE", rawResponse);
+            // Читаем ответ
+            String responseBody = response.body().string();
+            Log.d("Astrometry", "Raw login response: " + responseBody);
+
+            // Парсим JSON
+            JSONObject responseJson = new JSONObject(responseBody);
+            Log.println(Log.ASSERT, "JSONOUTPUT", String.valueOf(responseJson));
+
+            // Проверяем наличие ошибок
+            if (responseJson.has("status") && "error".equals(responseJson.getString("status"))) {
+                String errorMsg = responseJson.optString("errormessage", "Unknown error");
+                throw new IOException("API error: " + errorMsg);
+            }
+
+            // Проверяем наличие session key
+            if (!responseJson.has("session")) {
+                throw new JSONException("Server response doesn't contain session key: " + responseBody);
+            }
+
+            return responseJson.getString("session");
         }
     }
 
@@ -93,8 +145,14 @@ public class AstrometryNetClient {
         OkHttpClient client = new OkHttpClient();
         File imageFile = new File(imagePath);
 
+        // Проверка существования файла
+        if (!imageFile.exists()) {
+            throw new IOException("File not found: " + imagePath);
+        }
+
         JSONObject requestJson = new JSONObject();
         requestJson.put("session", sessionKey);
+        requestJson.put("publicly_visible", "n");  // Добавляем рекомендуемые параметры
 
         RequestBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -106,9 +164,14 @@ public class AstrometryNetClient {
         Request request = new Request.Builder()
                 .url(UPLOAD_URL)
                 .post(requestBody)
+                .addHeader("Accept", "application/json")  // Добавляем заголовок
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Upload failed: " + response.code());
+            }
+
             String responseBody = response.body().string();
             JSONObject json = new JSONObject(responseBody);
             return json.getJSONObject("submission").getString("subid");
