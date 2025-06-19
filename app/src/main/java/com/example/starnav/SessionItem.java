@@ -14,4 +14,11 @@ public class SessionItem {
         this.latitude = latitude;
         this.longitude = longitude;
     }
+
+
+    // Геттеры
+    public String getDate() { return date; }
+    public String getStatus() { return status; }
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
 }

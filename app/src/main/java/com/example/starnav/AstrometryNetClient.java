@@ -1,5 +1,6 @@
 package com.example.starnav;
 
+import android.app.Activity;
 import android.content.Context;
 
 import okhttp3.*;
@@ -12,11 +13,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 
 import android.util.Log;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.widget.Toast;
+
+import java.io.File;
 
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.CloseableHttpResponse;
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.HttpGet;
@@ -64,29 +71,39 @@ public class AstrometryNetClient {
                 }
                 Log.println(Log.ASSERT, "Началась новая сессия", sessionKey);
                 DataBaseHelper databaseHelper = new DataBaseHelper(context);
-                ZonedDateTime utcTime = ZonedDateTime.now(java.time.ZoneOffset.UTC);
+                ZonedDateTime utcTime = ZonedDateTime.now(ZoneOffset.UTC);
                 // Используйте ISO-8601 формат (рекомендуется)
-               DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
                 String timeString = utcTime.format(formatter);
+
                 String subid_polar = "";
                 String subid_zenith = "";
+                int heightPolImage = 0;
+                int i = 0;
                 for (String path : imagePaths) {
                     try {
                         String subId = uploadImage(path, sessionKey);
-                        if (subId != null) {
-                            if (path.contains("polarius")){
-                                subid_polar = subId;
-                            }
-                            Log.i("DataBase", "Image uploaded, subId: " + subId);
+                        if (i == 1) {
+                            subid_polar = subId;
+                            heightPolImage = getImageHeight(path);
+
                         } else {
                             subid_zenith = subId;
+                            i++;
                         }
+                        Log.i("DataBase", "Image uploaded, subId: " + subId + " " + subid_zenith);
                     } catch (Exception e) {
                         Log.e("Database", "Error uploading image", e);
                     }
                 }
-                databaseHelper.insertDataSessions(email, subid_polar, subid_zenith, timeString);
-                Log.println(Log.ASSERT, "ooooooooo", email + subid_polar + subid_zenith + timeString);
+                boolean res = databaseHelper.insertDataSessions(email, subid_polar, subid_zenith, timeString, heightPolImage);
+                if (!res) {
+                    ((Activity) context).runOnUiThread(() ->
+                            Toast.makeText(context, "Не получилось отправить на решения изображения. Попробуйте позже", Toast.LENGTH_LONG).show());
+                } else {
+                    ((Activity) context).runOnUiThread(() ->
+                            Toast.makeText(context, "Изображения отправлены. Ждите результат около 15 минут", Toast.LENGTH_LONG).show());
+                }
             } catch (Exception e) {
                 Log.e("Database", "Error processing images", e);
             }
@@ -216,32 +233,16 @@ public class AstrometryNetClient {
     }
 
     public double getPolarisYFromFits(Context context, String jobId) throws IOException {
-        // URL для скачивания WCS FITS-файла
-        String url = "https://nova.astrometry.net/image_rd_file/" + jobId;
-        String fitsPath = ""; // Получаем файл Fits и скачиваем его
-
-        // Создаем временный файл
-        File outputFile = new File(context.getExternalFilesDir(null), "image_rd_" + jobId + ".fits");
-
-        try (CloseableHttpClient httpClient = HttpClients.createDefault();
-             CloseableHttpResponse response = httpClient.execute(new HttpGet(url));
-             InputStream is = response.getEntity().getContent();
-             FileOutputStream fos = new FileOutputStream(outputFile)) {
-
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = is.read(buffer)) != -1) {
-                fos.write(buffer, 0, bytesRead);
-            }
-        }
         FitsReader fitsReader = new FitsReader();
-        float polarisY = fitsReader.getPolarisY(fitsPath);
+        double polarisY = fitsReader.getPolarisY(jobId);
         return polarisY;
     }
 
-    public String getJobId(String SUBID, String session) throws IOException {
-        HttpUrl url = HttpUrl.parse("http://nova.astrometry.net/api/submissions/" + SUBID).newBuilder()
-                .addQueryParameter("session", session)
+    public static String getJobId(String submissionId, String sessionKey) throws IOException {
+        OkHttpClient client = new OkHttpClient();
+
+        // Формируем URL с параметрами
+        HttpUrl url = HttpUrl.parse("http://nova.astrometry.net/api/submissions/" + submissionId).newBuilder()
                 .build();
 
         Request request = new Request.Builder()
@@ -253,25 +254,43 @@ public class AstrometryNetClient {
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected code " + response);
             }
-            String responseBody = response.body().string();
-            JSONObject submission = new JSONObject(responseBody);
-            // Проверяем наличие ключа "jobs"
-            if (!submission.has("jobs")) {
-                throw new IOException("No 'jobs' field in response");
-            }
-            JSONArray jobs = submission.getJSONArray("jobs");
-            // Проверяем пустой ли массив jobs
-            if (jobs.length() == 0) {
-                throw new IOException("No jobs available (submission status: )");
-            }
-            // Возвращаем первый job_id
-            return String.valueOf(jobs.getInt(0));
 
-        } catch (JSONException e) {
-            throw new IOException("Failed to parse JSON response", e);
+            String responseBody = response.body().string();
+
+            // Проверяем, не XML ли это
+            if (responseBody.trim().startsWith("<?xml")) {
+                Log.d("subid", submissionId);
+                throw new IOException("Server returned XML instead of JSON");
+            }
+
+            try {
+                JSONObject submission = new JSONObject(responseBody);
+
+                // Проверяем статус отправки
+                if (submission.has("status")) {
+                    String status = submission.getString("status");
+                    if (!"success".equals(status)) {
+                        throw new IOException("Submission status: " + status);
+                    }
+                }
+
+                // Проверяем наличие ключа "jobs"
+                if (!submission.has("jobs")) {
+                    throw new IOException("No 'jobs' field in response");
+                }
+
+                JSONArray jobs = submission.getJSONArray("jobs");
+                if (jobs.length() == 0) {
+                    throw new IOException("No jobs available");
+                }
+
+                return String.valueOf(jobs.getInt(0));
+            } catch (JSONException e) {
+                // Логируем сырой ответ для отладки
+                throw new IOException("Failed to parse JSON response", e);
+            }
         }
     }
-
     public static JSONObject getJobInfo(String jobId, String session) throws IOException {
         HttpUrl url = HttpUrl.parse("http://nova.astrometry.net/api/jobs/" + jobId + "/info/").newBuilder()
                 .addQueryParameter("session", session)
@@ -288,5 +307,16 @@ public class AstrometryNetClient {
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public int getImageHeight(String imagePath) {
+        // Создаем объект Options для чтения только метаданных
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true; // Только размеры, не загружаем само изображение
+
+        // Читаем размеры файла
+        BitmapFactory.decodeFile(imagePath, options);
+
+        return options.outHeight; // Возвращаем высоту
     }
 }

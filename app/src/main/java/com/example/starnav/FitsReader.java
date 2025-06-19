@@ -1,39 +1,71 @@
 package com.example.starnav;
+import android.util.Log;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+
 import nom.tam.fits.Fits;
 import nom.tam.fits.BinaryTableHDU;
 import nom.tam.fits.TableHDU;
 import nom.tam.util.Cursor;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import org.json.JSONArray;
+import okhttp3.Response;
 
 public class FitsReader {
-    public float getPolarisY(String pathFits) {
-        String fitsFilePath = pathFits; // Путь к вашему FITS-файлу
-        double polarRa = 37.95456067;  // RA Полярной звезды (в градусах, J2000)
-        double polarDec = 89.26410897; // DEC Полярной звезды (в градусах, J2000)
-        double tolerance = 5;       // Допустимая погрешность в градусах
+    public static double getPolarisY(String jobId) throws IOException {
+        OkHttpClient client = new OkHttpClient();
 
-        try {
-            Fits fits = new Fits(fitsFilePath);
-            TableHDU hdu = (TableHDU) fits.getHDU(1); // Предполагаем, что данные во 2-м HDU (индекс 1)
+        // Формируем URL запроса
+        String url = "http://nova.astrometry.net/api/jobs/" + jobId + "/annotations/";
 
-            // Получаем колонки RA, DEC, X, Y
-            double[] raArr = (double[]) hdu.getColumn("ra");
-            double[] decArr = (double[]) hdu.getColumn("dec");
-            float[] xArr = (float[]) hdu.getColumn("x");
-            float[] yArr = (float[]) hdu.getColumn("y");
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
 
-            // Поиск Полярной звезды
-            for (int i = 0; i < raArr.length; i++) {
-                if (Math.abs(raArr[i] - polarRa) <= tolerance &&
-                        Math.abs(decArr[i] - polarDec) <= tolerance) {
-                    System.out.printf("Полярная звезда найдена: x=%.2f, y=%.2f%n", xArr[i], yArr[i]);
-                    return yArr[i];
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Request failed: " + response.code());
+            }
+
+            String responseBody = response.body().string();
+            JSONObject json = new JSONObject(responseBody);
+
+            // Проверяем наличие аннотаций
+            if (!json.has("annotations")) {
+                throw new IOException("No annotations in response");
+            }
+
+            JSONArray annotations = json.getJSONArray("annotations");
+
+            // Ищем Polaris в аннотациях
+            for (int i = 0; i < annotations.length(); i++) {
+                JSONObject annotation = annotations.getJSONObject(i);
+                if (annotation.has("names")) {
+                    JSONArray names = annotation.getJSONArray("names");
+
+                    for (int j = 0; j < names.length(); j++) {
+                        String name = names.getString(j);
+
+                        // Проверяем разные варианты названия Polaris
+                        if (name.contains("Polaris")) {
+
+                            // Возвращаем Y-координату
+                            return annotation.getDouble("pixely");
+                        }
+                    }
                 }
             }
-            System.out.println("Полярная звезда не найдена в файле.");
 
-        } catch (Exception e) {
-            e.printStackTrace();
+            // Если Polaris не найден
+            return -1;
+
+        } catch (JSONException e) {
+            throw new IOException("Failed to parse JSON response", e);
         }
-        return -1;
     }
 }
