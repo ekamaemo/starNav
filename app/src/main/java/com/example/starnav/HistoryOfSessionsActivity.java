@@ -29,6 +29,7 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -60,18 +61,18 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
         bottomNav.setSelectedItemId(R.id.nav_history);
         dbHelper = new DataBaseHelper(this);
 
-        myClient = new AstrometryNetClient(this, email, API_KEY, "", "");
-
-        List<SessionItem> items = Arrays.asList(
-                new SessionItem("http://example.com/photo1.jpg", "12.05.2023", true),
-                new SessionItem("http://example.com/photo2.jpg", "13.05.2023", false)
-        );
-//        List<SessionItem> items = null;
-//        try {
-//            items = getSessions(prefs.getString("email", "noname@noname.com"));
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
+//        myClient = new AstrometryNetClient(this, email, API_KEY, "", "");
+//
+//        List<SessionItem> items = Arrays.asList(
+//                new SessionItem("http://example.com/photo1.jpg", "12.05.2023", true),
+//                new SessionItem("http://example.com/photo2.jpg", "13.05.2023", false)
+//        );
+        List<SessionItem> items = null;
+        try {
+            items = getSessions(prefs.getString("email", "noname@noname.com"));
+        } catch (IOException | JSONException e) {
+            throw new RuntimeException(e);
+        }
 
         recyclerView.setAdapter(
                 new SessionsAdapter(
@@ -107,64 +108,63 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
         });
     }
 
-    private List<SessionItem> getSessions(String email) throws IOException {
+    private List<SessionItem> getSessions(String email) throws IOException, JSONException {
         List<SessionItem> items = new ArrayList<>();
         String currDate = new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime());
         Cursor sessionsCursor = dbHelper.getUserSessions(email);
 
         if (sessionsCursor != null && sessionsCursor.moveToFirst()) {
             do {
-                @SuppressLint("Range") String subid = sessionsCursor.getString(sessionsCursor.getColumnIndex("subid"));
-                @SuppressLint("Range") String date = sessionsCursor.getString(sessionsCursor.getColumnIndex("date_of_dispatch"));
+                @SuppressLint("Range") String status = sessionsCursor.getString(sessionsCursor.getColumnIndex("status"));
+                @SuppressLint("Range") String subid_polar = sessionsCursor.getString(sessionsCursor.getColumnIndex("subid_polar"));
+                @SuppressLint("Range") String subid_zenith = sessionsCursor.getString(sessionsCursor.getColumnIndex("subid_senith"));
+                @SuppressLint("Range") String date = sessionsCursor.getString(sessionsCursor.getColumnIndex("created_atUTC"));
 
-                String[] subids = subid.split(" ");
-                String subidZenith = subids[0];
-                String subidPolarius = subids[1];
-//
-//                // 1. Обработка зенита
-//                List<String> zenithJobIds = myClient.getJobsIds(subidZenith);
-//                if (!zenithJobIds.isEmpty()) {
-//                    String zenithJobId = zenithJobIds.get(0);
-//
-//                    // Проверяем существование job в БД
-//                    if (!dbHelper.jobExists(zenithJobId, subidZenith)) {
-//                        // Вставляем новую запись
-//                        dbHelper.insertDataJobs(
-//                                subidZenith,
-//                                zenithJobId,
-//                                "zenith",
-//                                "submitted", // начальный статус
-//                                "" // пустые данные
-//                        );
-//                    }
-//
-//                    // Обновляем информацию
-//                    myClient.getInfo(zenithJobId, subidZenith);
-//                }
-//
-//                // 2. Обработка полярной звезды
-//                List<String> polarJobIds = myClient.getJobsIds(subidPolarius);
-//                double yPol = 0;
-//                if (!polarJobIds.isEmpty()) {
-//                    String polarJobId = polarJobIds.get(0);
-//
-//                    if (!dbHelper.jobExists(polarJobId, subidPolarius)) {
-//                        dbHelper.insertDataJobs(
-//                                subidPolarius,
-//                                polarJobId,
-//                                "polar",
-//                                "submitted",
-//                                ""
-//                        );
-//                    }
-//                    yPol = myClient.downloadAndReadFitsFile(this, subidPolarius);
-//
-//                    myClient.getInfo(polarJobId, subidPolarius);
-//                }
-//                dbHelper.updateSessions(email, subid, yPol);
+                double latitude = 0;
+                double longitude = 0;
+                if (status.equals("processing")) {
+                    myClient = new AstrometryNetClient(this, email, API_KEY, "", "");
+                    String session = myClient.getSessionKey();
+                    String jobid_polar = myClient.getJobId(subid_polar, session);
+                    String jobid_zenith = myClient.getJobId(subid_zenith, session);
+
+                    String status_polar = myClient.isJobCompleted(jobid_polar);
+                    String status_zenith = myClient.isJobCompleted(jobid_zenith);
+                    if (Objects.equals(status_polar, "success") && (Objects.equals(status_zenith, "success"))) {
+                        // Считаем широту
+                        double polarisY = myClient.getPolarisYFromFits(this, jobid_polar);
+                        if (polarisY == -1) {
+                            Log.println(Log.ASSERT, "POLARIS", "Полярная звезда не найдена на изображении");
+                        } else {
+                            Log.println(Log.ASSERT, "POLARIS", "Координата Полярной звезды: " + polarisY);
+                            // Делаем рассчет широты
+                            JSONObject polarInfo = myClient.getJobInfo(jobid_polar, session);
+                            if ("success".equals(polarInfo.getString("status"))) {
+                                JSONObject calib = polarInfo.getJSONObject("calibration");
+                                double scaleDegPerPixel = calib.getDouble("scale");
+                                int height = calib.getInt("height");
+                                double fovHeight = scaleDegPerPixel * height;
+                                latitude = ObserverPosition.getLatitude(polarisY, fovHeight, height);
+                            }
+                        }
+
+                        // Считаем долготу
+                        JSONObject zenithInfo = myClient.getJobInfo(jobid_polar, session);
+                        if ("success".equals(zenithInfo.getString("status"))) {
+                            JSONObject calib = zenithInfo.getJSONObject("calibration");
+                            double raCenter = calib.getDouble("ra");
+                            double raCenterH = raCenter / 15;
+                            longitude = ObserverPosition.calculateLongitude(raCenterH, date);
+                        }
+                    }
+                    status = countStatus(status_polar, status_zenith);
+                    dbHelper.updateSessions(email, subid_zenith, subid_polar, latitude, longitude);
+                }
+
+
                 // Добавляем элемент в список
-                items.add(new SessionItem("", date, isProcessed(currDate, date)));
-                Log.d("SessionInfo", "SubID: " + subid + ", DateUTC: " + date);
+                items.add(new SessionItem(date, isProcessed(currDate, date), status, latitude, longitude));
+                Log.d("SessionInfo", " " + date + status + latitude + longitude);
 
             } while (sessionsCursor.moveToNext());
 
@@ -191,5 +191,16 @@ public class HistoryOfSessionsActivity extends AppCompatActivity{
             e.printStackTrace();
             return false; // В случае ошибки парсинга считаем, что даты не удовлетворяют условию
         }
+    }
+
+    private String countStatus(String status1, String status2){
+        if (status1.equals("success") && status2.equals("success")){
+            return "success";
+        } else if (status1.equals("failure") && status2.equals("failure")){
+            return "failed";
+        } else if ((status1.equals("success") || status1.equals("failure")) && ((status2.equals("success") || status2.equals("failure")))){
+            return "partial_success";
+        }
+        return "processing";
     }
 }

@@ -25,14 +25,19 @@ import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.cli
 import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.util.EntityUtils;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class AstrometryNetClient {
     private final String API_KEY;
-    private static final String UPLOAD_URL = "https://nova.astrometry.net/api/upload";
-    private static final String LOGIN_URL = "https://nova.astrometry.net/api/login";
+    private static final String UPLOAD_URL = "http://nova.astrometry.net/api/upload";
+    private static final String LOGIN_URL = "http://nova.astrometry.net/api/login";
     private final String[] imagePaths;
     private final String email;
     private final Context context;
+    private static final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build();
 
     public AstrometryNetClient(Context context, String email, String apiKey, String pathZenith, String pathPolarius) {
         this.context = context;
@@ -53,96 +58,85 @@ public class AstrometryNetClient {
         new Thread(() -> {
             try {
                 String sessionKey = getSessionKey();
-                if (sessionKey == null) {
+                if (sessionKey.isEmpty()) {
                     Log.e("AstrometryNet", "Failed to get session key");
                     return;
                 }
-
+                Log.println(Log.ASSERT, "Началась новая сессия", sessionKey);
                 DataBaseHelper databaseHelper = new DataBaseHelper(context);
                 ZonedDateTime utcTime = ZonedDateTime.now(java.time.ZoneOffset.UTC);
                 // Используйте ISO-8601 формат (рекомендуется)
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+               DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
                 String timeString = utcTime.format(formatter);
-                String subIds = "";
+                String subid_polar = "";
+                String subid_zenith = "";
                 for (String path : imagePaths) {
                     try {
                         String subId = uploadImage(path, sessionKey);
                         if (subId != null) {
-                            subIds += " " + subId;
+                            if (path.contains("polarius")){
+                                subid_polar = subId;
+                            }
                             Log.i("DataBase", "Image uploaded, subId: " + subId);
+                        } else {
+                            subid_zenith = subId;
                         }
                     } catch (Exception e) {
                         Log.e("Database", "Error uploading image", e);
                     }
                 }
-                databaseHelper.insertDataSessions(email, sessionKey, subIds, timeString, imagePaths[1], imagePaths[0]);
+                databaseHelper.insertDataSessions(email, subid_polar, subid_zenith, timeString);
+                Log.println(Log.ASSERT, "ooooooooo", email + subid_polar + subid_zenith + timeString);
             } catch (Exception e) {
                 Log.e("Database", "Error processing images", e);
             }
         }).start();
     }
 
-    private String getSessionKey() throws IOException, JSONException {
-        OkHttpClient client = new OkHttpClient();
+    public String getSessionKey() throws IOException, JSONException {
+        String sessionKey = "";
 
         // 1. Проверка API ключа
         if (API_KEY == null || API_KEY.isEmpty()) {
             throw new IllegalArgumentException("API key is not set");
         }
-
         // 2. Создаем JSON запрос
         JSONObject json = new JSONObject();
-        json.put("apikey", API_KEY);
+        ///ОСТОРОЖНООООООО НАДО ЗАМЕНИТЬ///
+        json.put("apikey", "alhknpomwwurufvh");
 
-        // 3. Настраиваем HTTP-запрос
-        RequestBody body = RequestBody.create(
-                json.toString(),
-                MediaType.parse("application/json; charset=utf-8")
-        );
+        // Обертываем в "request-json" как в Python-коде
+        JSONObject requestJson = new JSONObject();
+        requestJson.put("request-json", json.toString());
+
+        // Формируем FormBody как в Python-запросе
+        RequestBody body = new FormBody.Builder()
+                .add("request-json", json.toString())
+                .build();
 
         Request request = new Request.Builder()
                 .url(LOGIN_URL)
                 .post(body)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "application/json")
                 .build();
 
-        // 4. Выполняем запрос
         try (Response response = client.newCall(request).execute()) {
-            // Проверяем статус ответа
-            if (!response.isSuccessful()) {
-                String errorBody = response.body() != null ? response.body().string() : "no body";
-                throw new IOException("HTTP error " + response.code() + ": " + errorBody);
-            }
-            Log.println(Log.ASSERT, "ooooo", String.valueOf(response));
-            byte[] bytes = response.body().bytes();
-            String rawResponse = new String(bytes, StandardCharsets.UTF_8);
-            Log.d("RAW_RESPONSE", rawResponse);
-            // Читаем ответ
             String responseBody = response.body().string();
-            Log.d("Astrometry", "Raw login response: " + responseBody);
-
-            // Парсим JSON
+            Log.println(Log.ASSERT, "ooooooooooo", responseBody);
             JSONObject responseJson = new JSONObject(responseBody);
-            Log.println(Log.ASSERT, "JSONOUTPUT", String.valueOf(responseJson));
+            // Проверяем статус и выводим session
+            if ("success".equals(responseJson.getString("status"))) {
+                sessionKey = responseJson.getString("session");
+            } else {
+                System.err.println("Error: " + responseJson.getString("errormessage"));
 
-            // Проверяем наличие ошибок
-            if (responseJson.has("status") && "error".equals(responseJson.getString("status"))) {
-                String errorMsg = responseJson.optString("errormessage", "Unknown error");
-                throw new IOException("API error: " + errorMsg);
             }
-
-            // Проверяем наличие session key
-            if (!responseJson.has("session")) {
-                throw new JSONException("Server response doesn't contain session key: " + responseBody);
-            }
-
-            return responseJson.getString("session");
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+        return sessionKey;
     }
 
     private String uploadImage(String imagePath, String sessionKey) throws IOException, JSONException {
-        OkHttpClient client = new OkHttpClient();
         File imageFile = new File(imagePath);
 
         // Проверка существования файла
@@ -150,35 +144,64 @@ public class AstrometryNetClient {
             throw new IOException("File not found: " + imagePath);
         }
 
-        JSONObject requestJson = new JSONObject();
-        requestJson.put("session", sessionKey);
-        requestJson.put("publicly_visible", "n");  // Добавляем рекомендуемые параметры
+        try {
+            // 1. Создаем JSON параметры
+            JSONObject jsonParams = new JSONObject();
+            jsonParams.put("session", sessionKey);
+            jsonParams.put("publicly_visible", "y");
+            jsonParams.put("allow_modifications", "d");
+            jsonParams.put("allow_commercial_use", "d");
 
-        RequestBody requestBody = new MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("request-json", requestJson.toString())
-                .addFormDataPart("file", imageFile.getName(),
-                        RequestBody.create(imageFile, MediaType.parse("image/jpeg")))
-                .build();
+            // 2. Формируем multipart запрос
+            RequestBody requestBody = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("request-json",
+                            null,
+                            RequestBody.create(
+                                    jsonParams.toString(),
+                                    MediaType.parse("text/plain")))
+                    .addFormDataPart("file",
+                            imageFile.getName(),
+                            RequestBody.create(
+                                    imageFile,
+                                    MediaType.parse("application/octet-stream")))
+                    .build();
 
-        Request request = new Request.Builder()
-                .url(UPLOAD_URL)
-                .post(requestBody)
-                .addHeader("Accept", "application/json")  // Добавляем заголовок
-                .build();
+            // 3. Отправляем запрос
+            Request request = new Request.Builder()
+                    .url(UPLOAD_URL)
+                    .post(requestBody)
+                    .build();
 
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new IOException("Upload failed: " + response.code());
+            // 4. Обрабатываем ответ
+            try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    throw new IOException("Unexpected code " + response);
+                }
+
+                String responseBody = response.body().string();
+                JSONObject responseJson = new JSONObject(responseBody);
+
+                if ("success".equals(responseJson.getString("status"))) {
+                    String subId = responseJson.optString("subid", "unknown");
+                    Log.i("AstrometryUpload", "Success! Submission ID: " + subId);
+                    return subId; // Возвращаем subid при успехе
+                } else {
+                    String errorMsg = responseJson.optString("errormessage", "Unknown error");
+                    Log.e("AstrometryUpload", "Error: " + errorMsg);
+                    throw new IOException("API Error: " + errorMsg);
+                }
             }
-
-            String responseBody = response.body().string();
-            JSONObject json = new JSONObject(responseBody);
-            return json.getJSONObject("submission").getString("subid");
+        } catch (JSONException e) {
+            Log.e("AstrometryUpload", "JSON parsing error", e);
+            throw new IOException("Failed to parse API response", e);
+        } catch (IOException e) {
+            Log.e("AstrometryUpload", "Network error", e);
+            throw e; // Пробрасываем исключение дальше
         }
     }
 
-    public boolean isJobCompleted(String jobId) throws IOException {
+    public String isJobCompleted(String jobId) throws IOException {
         String url = "https://nova.astrometry.net/api/jobs/" + jobId;
 
         HttpGet request = new HttpGet(url);
@@ -186,15 +209,16 @@ public class AstrometryNetClient {
              CloseableHttpResponse response = httpClient.execute(request)) {
             String json = EntityUtils.toString(response.getEntity());
             JSONObject jobInfo = new JSONObject(json);
-            return "success".equals(jobInfo.getString("status"));
+            return jobInfo.getString("status");
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public double downloadAndReadFitsFile(Context context, String jobId) throws IOException {
+    public double getPolarisYFromFits(Context context, String jobId) throws IOException {
         // URL для скачивания WCS FITS-файла
         String url = "https://nova.astrometry.net/image_rd_file/" + jobId;
+        String fitsPath = ""; // Получаем файл Fits и скачиваем его
 
         // Создаем временный файл
         File outputFile = new File(context.getExternalFilesDir(null), "image_rd_" + jobId + ".fits");
@@ -210,104 +234,59 @@ public class AstrometryNetClient {
                 fos.write(buffer, 0, bytesRead);
             }
         }
-        FitsApiClient client = new FitsApiClient("https://ekamaemo.pythonanywhere.com/");
-        client.findPolaris(outputFile, new FitsApiClient.PolarisCallback() {
-            @Override
-            public double onSuccess(double polarisY) {
-                // Обработка успешного результата
-                return polarisY;
-            }
-
-            @Override
-            public int onError(String message) {
-                // Обработка ошибки
-                return -1;
-            }
-        });
-        return -1;
+        FitsReader fitsReader = new FitsReader();
+        float polarisY = fitsReader.getPolarisY(fitsPath);
+        return polarisY;
     }
 
-    public List<String> getJobsIds(String SUBID) throws IOException {
-        String url = "https://nova.astrometry.net/api/submissions/" + SUBID;
-        OkHttpClient client = new OkHttpClient();
-
-        Request request = new Request.Builder()
-                .url(url)
-                .get()  // Используем GET вместо POST, так как мы получаем данные
+    public String getJobId(String SUBID, String session) throws IOException {
+        HttpUrl url = HttpUrl.parse("http://nova.astrometry.net/api/submissions/" + SUBID).newBuilder()
+                .addQueryParameter("session", session)
                 .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new IOException("Unexpected code " + response);
-            }
-
-            String responseData = response.body().string();
-            JSONObject json = new JSONObject(responseData);
-
-            // Извлекаем массив jobs из JSON
-            JSONArray jobsArray = json.getJSONArray("jobs");
-
-            // Создаем список для хранения ID работ
-            List<String> jobIds = new ArrayList<>();
-
-            // Проходим по всем элементам массива и извлекаем ID
-            for (int i = 0; i < jobsArray.length(); i++) {
-                jobIds.add(String.valueOf(jobsArray.getInt(i)));
-            }
-
-            return jobIds;
-        } catch (Exception e) {
-            throw new IOException("Failed to parse jobs IDs", e);
-        }
-    }
-
-    public void getInfo(String jobID, String sessionId) {
-        String url = "https://nova.astrometry.net/api/jobs/" + jobID + "/info/";
-        OkHttpClient client = new OkHttpClient();
 
         Request request = new Request.Builder()
                 .url(url)
                 .get()
-                .addHeader("session", sessionId) // Важно: добавляем session key в заголовки!
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected code " + response);
             }
-
-            String responseData = response.body().string();
-            JSONObject json = new JSONObject(responseData);
-
-            // 1. Получаем статус
-            String status = json.getString("status");
-
-            // 2. Извлекаем нужные данные для info (пример для WCS-параметров)
-            JSONObject infoJson = new JSONObject();
-
-            if (json.has("calibration")) {
-                JSONObject calibration = json.getJSONObject("calibration");
-                infoJson.put("ra", calibration.optDouble("ra"));
-                infoJson.put("dec", calibration.optDouble("dec"));
-                infoJson.put("pixscale", calibration.optDouble("pixscale"));
+            String responseBody = response.body().string();
+            JSONObject submission = new JSONObject(responseBody);
+            // Проверяем наличие ключа "jobs"
+            if (!submission.has("jobs")) {
+                throw new IOException("No 'jobs' field in response");
             }
-
-            if (json.has("tags")) {
-                infoJson.put("tags", json.getJSONArray("tags"));
+            JSONArray jobs = submission.getJSONArray("jobs");
+            // Проверяем пустой ли массив jobs
+            if (jobs.length() == 0) {
+                throw new IOException("No jobs available (submission status: )");
             }
+            // Возвращаем первый job_id
+            return String.valueOf(jobs.getInt(0));
 
-            // 3. Конвертируем JSON в строку для сохранения в БД
-            String info = infoJson.toString();
+        } catch (JSONException e) {
+            throw new IOException("Failed to parse JSON response", e);
+        }
+    }
 
-            // 4. Обновляем базу данных
-            DataBaseHelper databaseHelper = new DataBaseHelper(context);
-            databaseHelper.updateJobs(jobID, sessionId, status, info);
+    public static JSONObject getJobInfo(String jobId, String session) throws IOException {
+        HttpUrl url = HttpUrl.parse("http://nova.astrometry.net/api/jobs/" + jobId + "/info/").newBuilder()
+                .addQueryParameter("session", session)
+                .build();
 
-        } catch (Exception e) {
-            Log.e("Astrometry", "Error fetching job info", e);
-            // Обновляем статус на "failed" в случае ошибки
-            DataBaseHelper databaseHelper = new DataBaseHelper(context);
-            databaseHelper.updateJobs(jobID, sessionId, "failed", "{\"error\": \"" + e.getMessage() + "\"}");
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body().string();
+            return new JSONObject(responseBody);
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
         }
     }
 }
