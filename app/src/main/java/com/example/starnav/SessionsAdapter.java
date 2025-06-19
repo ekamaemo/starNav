@@ -67,6 +67,8 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
         }
 
         public void bind(SessionItem item) {
+            date.setText(item.date);
+            status.setText(item.status);
         }
     }
 }

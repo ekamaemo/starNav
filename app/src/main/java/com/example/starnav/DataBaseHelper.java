@@ -46,7 +46,7 @@ public class DataBaseHelper extends SQLiteOpenHelper{
     private void insertTestSessions(SQLiteDatabase db) {
         // Тестовая сессия 1 (успешная)
         ContentValues cv1 = new ContentValues();
-        cv1.put("email", "1@1");
+        cv1.put("email", "noname@noname");
         cv1.put("subid_polar", "sub_polar_123");
         cv1.put("subid_zenith", "sub_zenith_456");
         cv1.put("status", "success");
@@ -57,16 +57,16 @@ public class DataBaseHelper extends SQLiteOpenHelper{
 
         // Тестовая сессия 2 (в процессе)
         ContentValues cv2 = new ContentValues();
-        cv2.put("email", "1@1");
-        cv2.put("subid_polar", "sub_polar_789");
-        cv2.put("subid_zenith", "sub_zenith_012");
+        cv2.put("email", "noname@noname");
+        cv2.put("subid_polar", "12611221");
+        cv2.put("subid_zenith", "12611225");
         cv2.put("status", "processing");
         cv2.put("created_atUTC", "2023-05-16T13:30:00Z");
         db.insert("sessions", null, cv2);
 
         // Тестовая сессия 3 (ошибка)
         ContentValues cv3 = new ContentValues();
-        cv3.put("email", "1@1");
+        cv3.put("email", "noname@noname");
         cv3.put("subid_polar", "sub_polar_345");
         cv3.put("subid_zenith", "sub_zenith_678");
         cv3.put("status", "failed");

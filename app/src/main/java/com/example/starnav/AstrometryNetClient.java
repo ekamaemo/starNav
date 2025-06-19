@@ -103,7 +103,7 @@ public class AstrometryNetClient {
         // 2. Создаем JSON запрос
         JSONObject json = new JSONObject();
         ///ОСТОРОЖНООООООО НАДО ЗАМЕНИТЬ///
-        json.put("apikey", "alhknpomwwurufvh");
+        json.put("apikey", "mwlmuhpsdvujnjrx");
 
         // Обертываем в "request-json" как в Python-коде
         JSONObject requestJson = new JSONObject();
