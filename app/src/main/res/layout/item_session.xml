@@ -70,7 +70,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="#E0FFFFFF"
-                    android:textSize="12sp"/>
+                    android:textSize="12sp"
+                    android:text="12 мая 2023, 14:30"/>
 
                 <TextView
                     android:id="@+id/sessionIdTextView"
