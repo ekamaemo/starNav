@@ -107,7 +107,7 @@ public class WelcomeActivity extends AppCompatActivity {
         });
 
         btnSkip.setOnClickListener(v -> {
-            //startActivity(new Intent(this, ApiKeyActivity.class));
+            startActivity(new Intent(this, LoginActivity.class));
             finish();
         });
     }
