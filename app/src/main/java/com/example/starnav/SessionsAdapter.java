@@ -1,5 +1,7 @@
 package com.example.starnav;
 
+import android.content.Context;
+import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,15 +19,21 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
 
     private List<SessionItem> items;
     private final OnItemClickListener listener;
+    private final Context context;  // Добавляем контекст
 
-    // Интерфейс для обработки кликов
     public interface OnItemClickListener {
         void onItemClick(SessionItem item);
     }
 
-    public SessionsAdapter(List<SessionItem> items, OnItemClickListener listener) {
+    public SessionsAdapter(Context context, List<SessionItem> items, OnItemClickListener listener) {
+        this.context = context;
         this.items = items;
         this.listener = listener;
+    }
+
+    public void updateItems(List<SessionItem> newItems) {
+        this.items = newItems;
+        notifyDataSetChanged();
     }
 
     @NonNull
@@ -36,18 +44,10 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
         return new ViewHolder(view);
     }
 
-
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         SessionItem item = items.get(position);
-        holder.bind(item);
-
-        // Убедитесь, что этот код есть и listener не null!
-        holder.itemView.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onItemClick(item); // Должен вызываться здесь
-            }
-        });
+        holder.bind(item, listener);
     }
 
     @Override
@@ -66,7 +66,24 @@ public class SessionsAdapter extends RecyclerView.Adapter<SessionsAdapter.ViewHo
             status = itemView.findViewById(R.id.statusTextView);
         }
 
-        public void bind(SessionItem item) {
+        public void bind(SessionItem item, OnItemClickListener listener) {
+            date.setText(item.getDate());
+            status.setText(item.getStatus());
+
+
+            // Обработка клика
+            itemView.setOnClickListener(v -> {
+                if (listener != null) {
+                    listener.onItemClick(item);
+                }
+
+                // Альтернативный вариант - прямая навигация
+                Context context = itemView.getContext();
+                Intent intent = new Intent(context, ItemActivity.class);
+                intent.putExtra("latitude", item.getLatitude());
+                intent.putExtra("longitude", item.getLongitude());
+                context.startActivity(intent);
+            });
         }
     }
 }

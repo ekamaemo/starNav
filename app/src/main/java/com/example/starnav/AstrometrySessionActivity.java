@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.Image;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -44,6 +45,7 @@ public class AstrometrySessionActivity extends AppCompatActivity {
     private Uri zenithImageUri, polarisImageUri;
     public static String API_KEY;
     public static String email;
+    public float heightImagePolar;
 
 
     @Override
@@ -186,6 +188,7 @@ public class AstrometrySessionActivity extends AppCompatActivity {
 
         if (resultCode == RESULT_OK) {
             if (requestCode == REQUEST_IMAGE_CAPTURE) {
+
                 // Обработка фото с камеры
                 Bitmap bitmap = BitmapFactory.decodeFile(currentPhotoPath);
                 File file = new File(currentPhotoPath);
@@ -199,6 +202,7 @@ public class AstrometrySessionActivity extends AppCompatActivity {
                 } else {
                     viewImagePolarius.setImageBitmap(bitmap);
                     polarisImageUri = photoUri; // Используем созданный URI
+
                 }
             } else if (requestCode == REQUEST_IMAGE_GALLERY) {
                 // Обработка выбора из галереи

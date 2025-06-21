@@ -1,8 +1,5 @@
 package com.example.starnav;
 
-import android.os.Build;
-
-
 import java.sql.Time;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -17,9 +14,7 @@ import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 
 public class ObserverPosition {
-    public static double getLatitude(double y){
-        int Y = 992;
-        float FOV = 60.0F;
+    public static double getLatitude(double y, double FOV, int Y){
         // y - координата Полярной звезды,Y - высота изображения, FOV- угловой обзор камеры по вертикали
         return (Y - y) / Y * FOV;
     }
@@ -37,7 +32,9 @@ public class ObserverPosition {
 
     // Парсинг строки даты-времени в формате ISO-8601 (UTC)
     private static ZonedDateTime parseUtcDateTime(String utcDateTime) {
-        return ZonedDateTime.parse(utcDateTime + "Z", DateTimeFormatter.ISO_ZONED_DATE_TIME);
+        String cleanedDateTime = utcDateTime.replace("ZZ", "Z")
+                .replaceAll("\\.\\d+", ""); // Удаляем наносекунды для упрощения
+        return ZonedDateTime.parse(cleanedDateTime, DateTimeFormatter.ISO_ZONED_DATE_TIME);
     }
 
     private static double calculateGST(ZonedDateTime utcTime) {

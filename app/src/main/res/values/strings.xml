@@ -2,6 +2,10 @@
     <string name="app_name">StarNav</string>
     <string name="skip">Пропустить</string>
     <string name="next">Далее</string>
+    <string name="close">Close</string>
+    <string name="star_map">Star Navigation</string>
+    <string name="your_location">Your Location</string>
+    <string name="determined_by_stars">Determined by stars observation</string>
     <string name="instruction_1">
         Сделайте фотографию зенита:\n
         1. Встаньте на открытой местности\n

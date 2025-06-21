@@ -8,4 +8,6 @@
     <color name="black">#000000</color>
     <color name="startblue">#00008B</color>
     <color name="endblue">#191970</color>
+    <color name="card_bg_transparent">#99000000</color>
+    <color name="text_secondary">#B3FFFFFF</color>
 </resources>

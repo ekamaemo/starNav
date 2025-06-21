@@ -32,11 +32,16 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-        if (k == 0) {
-            prefs.edit().clear().apply();
-        }
-        k += 1;
+        boolean isFirstLaunch = prefs.getBoolean("is_first_launch", true);
         boolean isLoggedIn = prefs.getBoolean("is_logged_in", false);
+
+        if (isFirstLaunch) {
+            // Показываем WelcomeActivity только при первом запуске
+            prefs.edit().putBoolean("is_first_launch", false).apply();
+            startActivity(new Intent(MainActivity.this, WelcomeActivity.class));
+            finish();
+            return;
+        }
 
         if (!isLoggedIn) {
             //show start activity
